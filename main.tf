@@ -232,6 +232,19 @@ resource "alicloud_instance" "mock_client" {
   host_name                  = "client"
 }
 
+data "aws_route53_zone" "main" {
+  name = "lgypro.com"
+}
+
+resource "aws_route53_record" "openvpn_server" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "openvpn"
+  type    = "A"
+  ttl     = "60"
+  records = [alicloud_instance.instance_vpn1.public_ip]
+}
+
+
 # 输出2台vpn服务器的公网地址
 output "vpn1-public-ip" {
   value = alicloud_instance.instance_vpn1.public_ip
