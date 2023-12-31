@@ -1,37 +1,32 @@
-# 创建一个VPC，作为容器，装在其他网络资源
-resource "alicloud_vpc" "branch_office_vpc" {
-  vpc_name   = "LabVPC"
-  cidr_block = "172.16.0.0/16"
-}
+# 这是一个失败的访问，原因在于两个交换机位于同一个vpc内，在其中一个交换机关联的路由表内无法指定到另外一个交换机的路由，原有的路由是系统路由
+# 但是经研究发现，可以在路由表中添加到vpc中其他未分配到交换机上的网段的路由
+# ---------------------------------------------------------------------------------------------------------------
 
-resource "alicloud_vpc" "headquarters_office_vpc" {
-  vpc_name   = "LabVPC"
-  cidr_block = "172.16.0.0/16"
+# 创建一个VPC，作为容器，装在其他网络资源
+resource "alicloud_vpc" "lab_vpc" {
+  vpc_name    = "LabVPC"
+  cidr_block  = "172.16.0.0/16"
+  description = "测试openvpn点对点链路"
 }
 
 # 使用VPC高阶特性，互联网网关
-resource "alicloud_vpc_ipv4_gateway" "branch_office_vpc_igw" {
+resource "alicloud_vpc_ipv4_gateway" "lab_vpc_igw" {
   ipv4_gateway_name = "LabVPC-IGW"
-  vpc_id            = alicloud_vpc.branch_office_vpc.id
-  enabled           = "true"
-}
-resource "alicloud_vpc_ipv4_gateway" "headquarters_office_vpc_igw" {
-  ipv4_gateway_name = "LabVPC-IGW"
-  vpc_id            = alicloud_vpc.headquarters_office_vpc.id
+  vpc_id            = alicloud_vpc.lab_vpc.id
   enabled           = "true"
 }
 
 # 创建2个路由表，公司总部一个、分支办公室一个
 resource "alicloud_route_table" "branch_office" {
   description      = "分支办公室"
-  vpc_id           = alicloud_vpc.branch_office_vpc.id
+  vpc_id           = alicloud_vpc.lab_vpc.id
   route_table_name = "branch-office"
   associate_type   = "VSwitch"
 }
 
 resource "alicloud_route_table" "headquarters_office" {
   description      = "公司总部"
-  vpc_id           = alicloud_vpc.headquarters_office_vpc.id
+  vpc_id           = alicloud_vpc.lab_vpc.id
   route_table_name = "headquarters-office"
   associate_type   = "VSwitch"
 }
@@ -40,14 +35,13 @@ resource "alicloud_route_table" "headquarters_office" {
 resource "alicloud_vswitch" "branch_office" {
   vswitch_name = "分支办公室"
   cidr_block   = "172.16.12.0/24"
-  vpc_id       = alicloud_vpc.branch_office_vpc.id
+  vpc_id       = alicloud_vpc.lab_vpc.id
   zone_id      = "cn-zhangjiakou-c"
 }
-
 resource "alicloud_vswitch" "headquarters_office" {
   vswitch_name = "公司总部"
   cidr_block   = "172.16.11.0/24"
-  vpc_id       = alicloud_vpc.headquarters_office_vpc.id
+  vpc_id       = alicloud_vpc.lab_vpc.id
   zone_id      = "cn-zhangjiakou-c"
 }
 
@@ -67,48 +61,31 @@ resource "alicloud_route_entry" "branch_office_gw" {
   route_table_id        = alicloud_route_table.branch_office.id
   destination_cidrblock = "0.0.0.0/0"
   nexthop_type          = "Ipv4Gateway"
-  nexthop_id            = alicloud_vpc_ipv4_gateway.branch_office_vpc_igw.id
+  nexthop_id            = alicloud_vpc_ipv4_gateway.lab_vpc_igw.id
 }
 
 resource "alicloud_route_entry" "headquarters_office_gw" {
   route_table_id        = alicloud_route_table.headquarters_office.id
   destination_cidrblock = "0.0.0.0/0"
   nexthop_type          = "Ipv4Gateway"
-  nexthop_id            = alicloud_vpc_ipv4_gateway.headquarters_office_vpc_igw.id
+  nexthop_id            = alicloud_vpc_ipv4_gateway.lab_vpc_igw.id
 }
 
 # 创建一个安全组，附加到ecs实例上，放行所有流量
-resource "alicloud_security_group" "branch_office_vpc_open_sg" {
-  vpc_id              = alicloud_vpc.branch_office_vpc.id
+resource "alicloud_security_group" "open_sg" {
+  vpc_id              = alicloud_vpc.lab_vpc.id
   security_group_type = "normal"
   name                = "openSG"
   description         = "open to the world"
   inner_access_policy = "Accept"
 }
 
-resource "alicloud_security_group" "headquarters_office_vpc_open_sg" {
-  vpc_id              = alicloud_vpc.headquarters_office_vpc.id
-  security_group_type = "normal"
-  name                = "openSG"
-  description         = "open to the world"
-  inner_access_policy = "Accept"
-}
-
-resource "alicloud_security_group_rule" "branch_office_allow_all_traffic" {
+resource "alicloud_security_group_rule" "allow_all_traffic" {
   type              = "ingress"
   ip_protocol       = "all"
   policy            = "accept"
   priority          = 1
-  security_group_id = alicloud_security_group.branch_office_vpc_open_sg.id
-  cidr_ip           = "0.0.0.0/0"
-}
-
-resource "alicloud_security_group_rule" "headquarters_office_allow_all_traffic" {
-  type              = "ingress"
-  ip_protocol       = "all"
-  policy            = "accept"
-  priority          = 1
-  security_group_id = alicloud_security_group.headquarters_office_vpc_open_sg.id
+  security_group_id = alicloud_security_group.open_sg.id
   cidr_ip           = "0.0.0.0/0"
 }
 
@@ -129,7 +106,7 @@ data "alicloud_ecs_key_pairs" "work_mac_pro" {
 
 # 从2个交换机下分别启动一个ecs实例用作vpn主机
 resource "alicloud_instance" "instance_vpn1" {
-  security_groups            = [alicloud_security_group.headquarters_office_vpc_open_sg.id]
+  security_groups            = [alicloud_security_group.open_sg.id]
   vswitch_id                 = alicloud_vswitch.headquarters_office.id
   instance_charge_type       = "PostPaid"
   spot_strategy              = "SpotAsPriceGo"
@@ -146,7 +123,7 @@ resource "alicloud_instance" "instance_vpn1" {
 }
 
 resource "alicloud_instance" "instance_vpn2" {
-  security_groups            = [alicloud_security_group.branch_office_vpc_open_sg.id]
+  security_groups            = [alicloud_security_group.open_sg.id]
   vswitch_id                 = alicloud_vswitch.branch_office.id
   instance_charge_type       = "PostPaid"
   spot_strategy              = "SpotAsPriceGo"
@@ -165,36 +142,68 @@ resource "alicloud_instance" "instance_vpn2" {
 # 新增路由把发往VPN对端端点的流量路由到对端网络里的VPN服务器
 resource "alicloud_route_entry" "branch_office_tovpn1" {
   route_table_id        = alicloud_route_table.branch_office.id
-  destination_cidrblock = "10.200.0.0/30"
+  destination_cidrblock = "10.200.0.1/32"
   nexthop_type          = "Instance"
-  nexthop_id            = alicloud_instance.instance_vpn2.id
+  nexthop_id            = alicloud_instance.instance_vpn1.id
 }
 
 resource "alicloud_route_entry" "headquarters_office_tovpn2" {
   route_table_id        = alicloud_route_table.headquarters_office.id
-  destination_cidrblock = "10.200.0.0/30"
-  nexthop_type          = "Instance"
-  nexthop_id            = alicloud_instance.instance_vpn1.id
-}
-
-# 新增到对端网段的路由
-resource "alicloud_route_entry" "branch_office_to_headquarters" {
-  route_table_id        = alicloud_route_table.branch_office.id
-  destination_cidrblock = "172.16.11.0/24"
+  destination_cidrblock = "10.200.0.2/32"
   nexthop_type          = "Instance"
   nexthop_id            = alicloud_instance.instance_vpn2.id
 }
 
-resource "alicloud_route_entry" "headquarters_office_to_branch" {
-  route_table_id        = alicloud_route_table.headquarters_office.id
-  destination_cidrblock = "172.16.12.0/24"
-  nexthop_type          = "Instance"
-  nexthop_id            = alicloud_instance.instance_vpn1.id
+# 增加ACL限制两个交换机的流量互通，模拟出两个网络的效果
+resource "alicloud_network_acl" "branch_office_acl" {
+  vpc_id           = alicloud_vpc.lab_vpc.id
+  network_acl_name = "branch-office"
+  ingress_acl_entries {
+    description    = "deny traffic from headquarters"
+    source_cidr_ip = "172.16.11.0/24"
+    port           = "-1/-1"
+    policy         = "drop"
+    protocol       = "all"
+  }
+  ingress_acl_entries {
+    description    = "accept all"
+    source_cidr_ip = "0.0.0.0/0"
+    port           = "-1/-1"
+    policy         = "accept"
+    protocol       = "all"
+  }
+  resources {
+    resource_id   = alicloud_vswitch.branch_office.id
+    resource_type = "VSwitch"
+  }
+}
+
+resource "alicloud_network_acl" "headquarters_office_acl" {
+  vpc_id           = alicloud_vpc.lab_vpc.id
+  network_acl_name = "headquarters-office"
+  ingress_acl_entries {
+    description    = "deny traffic from branch office"
+    source_cidr_ip = "172.16.12.0/24"
+    port           = "-1/-1"
+    policy         = "drop"
+    protocol       = "all"
+  }
+  ingress_acl_entries {
+    description    = "accept all"
+    source_cidr_ip = "0.0.0.0/0"
+    port           = "-1/-1"
+    policy         = "accept"
+    protocol       = "all"
+  }
+  resources {
+    resource_id   = alicloud_vswitch.headquarters_office.id
+    resource_type = "VSwitch"
+  }
 }
 
 # 再准备2台用于扮演应用客户端和服务器的机器
 resource "alicloud_instance" "mock_server" {
-  security_groups            = [alicloud_security_group.headquarters_office_vpc_open_sg.id]
+  security_groups            = [alicloud_security_group.open_sg.id]
   vswitch_id                 = alicloud_vswitch.headquarters_office.id
   instance_charge_type       = "PostPaid"
   spot_strategy              = "SpotAsPriceGo"
@@ -211,7 +220,7 @@ resource "alicloud_instance" "mock_server" {
 }
 
 resource "alicloud_instance" "mock_client" {
-  security_groups            = [alicloud_security_group.branch_office_vpc_open_sg.id]
+  security_groups            = [alicloud_security_group.open_sg.id]
   vswitch_id                 = alicloud_vswitch.branch_office.id
   instance_charge_type       = "PostPaid"
   spot_strategy              = "SpotAsPriceGo"
