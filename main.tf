@@ -241,10 +241,10 @@ resource "aws_route53_record" "openvpn_server" {
 
 
 # 输出2台vpn服务器的公网地址
-output "vpn1-public-ip" {
+output "vpn1_public_ip" {
   value = alicloud_instance.instance_vpn1.public_ip
 }
 
-output "vpn2-public-ip" {
+output "vpn2_public_ip" {
   value = alicloud_instance.instance_vpn2.public_ip
 }
