@@ -6,6 +6,7 @@ provider "registry.terraform.io/aliyun/alicloud" {
   constraints = "1.214.0"
   hashes = [
     "h1:DXUPpQmQDnFVultgIxLcA7EMsbmCRLYjD5fnXCpP/rg=",
+    "h1:gSoBq9lSiJXM42dKBBKiGok7AogMsK25P1A8NbRLHdo=",
     "zh:19a79f039e4f01b1cbd2b796a4a415236fad2f6e1ba497bd31b9be31bf4ca81d",
     "zh:1f3890f1143096cd99bceb7f75c365b312c5c7893c558a61a0d55923aebd151a",
     "zh:31e005b7acd26b38c4512c9d8c4e620091d691741d4a1b93b243dead1f97102d",
