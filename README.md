@@ -7,6 +7,9 @@
 [使用terraform最佳实践](https://cloud.google.com/docs/terraform/best-practices-for-terraform?hl=zh-cn#naming-convention)
 
 ## 配置
+
+![infra.png](./infra.png)
+
 ### 通用准备工作
 ```bash
 # 安装openvpn软件包
